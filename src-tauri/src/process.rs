@@ -280,7 +280,7 @@ fn resolve_process(
         command_line: command_line.unwrap_or_default(),
         services: services.get(&pid).cloned().unwrap_or_default(),
         // A process we cannot even query the session of is treated as a system process
-        is_system: session_id(pid).map_or(true, |session| session == 0),
+        is_system: session_id(pid).is_none_or(|session| session == 0),
     }
 }
 
