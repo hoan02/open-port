@@ -1,318 +1,193 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod elevation;
+mod net;
+mod process;
+mod tray;
+mod watch;
 
-use std::ffi::OsString;
-use std::mem;
-use std::os::windows::ffi::OsStringExt;
-use windows::{
-    Win32::Foundation::CloseHandle,
-    Win32::NetworkManagement::IpHelper::{
-        GetExtendedTcpTable, MIB_TCP6ROW_OWNER_PID, MIB_TCP6TABLE_OWNER_PID, MIB_TCPROW_OWNER_PID,
-        MIB_TCPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL,
-    },
-    Win32::System::ProcessStatus::GetModuleFileNameExW,
-    Win32::System::Threading::{
-        OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
-        PROCESS_VM_READ,
-    },
-};
+use std::collections::BTreeMap;
+use tauri::{Manager, WindowEvent};
+use tauri_plugin_window_state::StateFlags;
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Clone, PartialEq, Eq, Debug)]
 struct PortInfo {
     port: u16,
     pid: u32,
+    /// "TCP" or "UDP"
+    protocol: &'static str,
+    /// Every address this process binds the port on, e.g. ["0.0.0.0", "::"]
+    local_addresses: Vec<String>,
     process_name: String,
     process_path: String,
+    command_line: String,
+    /// Windows services hosted by the process (svchost.exe)
+    services: Vec<String>,
+    /// Belongs to a service or the OS rather than the user's session
+    is_system: bool,
 }
 
-/// Get the process path from a PID
-fn get_process_path(pid: u32) -> String {
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
+fn collect_ports() -> Result<Vec<PortInfo>, String> {
+    let endpoints = net::all_endpoints()?;
 
-        if handle.is_err() {
-            return String::new();
+    // One row per (port, protocol, pid): the same socket bound on IPv4 and IPv6
+    // (0.0.0.0 and ::) is a single thing from the user's point of view
+    let mut grouped: BTreeMap<(u16, &'static str, u32), Vec<String>> = BTreeMap::new();
+    for endpoint in endpoints {
+        let addresses = grouped
+            .entry((endpoint.port, endpoint.protocol, endpoint.pid))
+            .or_default();
+        if !addresses.contains(&endpoint.local_address) {
+            addresses.push(endpoint.local_address);
         }
-
-        let handle = handle.unwrap();
-        let mut buffer = vec![0u16; 260]; // MAX_PATH
-
-        let result = GetModuleFileNameExW(handle, None, &mut buffer);
-        CloseHandle(handle).ok();
-
-        if result == 0 {
-            return String::new();
-        }
-
-        // Convert to string, removing null terminator
-        let len = buffer.iter().position(|&x| x == 0).unwrap_or(buffer.len());
-        buffer.truncate(len);
-
-        let os_string = OsString::from_wide(&buffer);
-        os_string.to_string_lossy().to_string()
     }
+
+    let processes = process::resolve_processes(grouped.keys().map(|&(_, _, pid)| pid));
+
+    Ok(grouped
+        .into_iter()
+        .map(|((port, protocol, pid), mut local_addresses)| {
+            // IPv4 before IPv6
+            local_addresses.sort_by_key(|address| (address.contains(':'), address.clone()));
+            let info = processes.get(&pid).cloned().unwrap_or_default();
+
+            PortInfo {
+                port,
+                pid,
+                protocol,
+                local_addresses,
+                process_name: info.name,
+                process_path: info.path,
+                command_line: info.command_line,
+                services: info.services,
+                is_system: info.is_system,
+            }
+        })
+        .collect())
 }
 
-/// Convert port from network byte order to host byte order
-fn ntohs(port: u16) -> u16 {
-    u16::from_be(port)
-}
-
-/// Get IPv4 listening ports
-fn get_ipv4_ports() -> Result<Vec<PortInfo>, String> {
-    unsafe {
-        let mut size: u32 = 0;
-
-        // First call to get required buffer size
-        let result = GetExtendedTcpTable(
-            None,
-            &mut size,
-            false,
-            windows::Win32::Networking::WinSock::AF_INET.0 as u32,
-            TCP_TABLE_OWNER_PID_ALL,
-            0,
-        );
-
-        // ERROR_INSUFFICIENT_BUFFER = 122
-        // This error is expected on first call
-        if result != 122 {
-            // If no IPv4 ports, return empty vector instead of error
-            if result == 0 {
-                return Ok(Vec::new());
-            }
-            return Err(format!("Failed to get IPv4 buffer size: {}", result));
-        }
-
-        // Allocate buffer
-        let mut buffer = vec![0u8; size as usize];
-
-        // Second call to get actual data
-        let result = GetExtendedTcpTable(
-            Some(buffer.as_mut_ptr() as *mut _),
-            &mut size,
-            false,
-            windows::Win32::Networking::WinSock::AF_INET.0 as u32,
-            TCP_TABLE_OWNER_PID_ALL,
-            0,
-        );
-
-        // Check if successful (ERROR_SUCCESS = 0)
-        if result != 0 {
-            return Err(format!("Failed to get IPv4 TCP table: {}", result));
-        }
-
-        // Cast buffer to TCP table structure
-        let table = &*(buffer.as_ptr() as *const MIB_TCPTABLE_OWNER_PID);
-
-        let mut ports = Vec::new();
-
-        // Calculate offset to first entry
-        let table_ptr = buffer.as_ptr() as *const u8;
-        let row_size = mem::size_of::<MIB_TCPROW_OWNER_PID>();
-        let table_header_size = mem::size_of::<u32>(); // Size of dwNumEntries
-
-        // Iterate through all rows using pointer arithmetic
-        for i in 0..table.dwNumEntries {
-            // Calculate offset: header size + (i * row_size)
-            let row_offset = table_header_size + (i as usize * row_size);
-            let row_ptr = table_ptr.add(row_offset) as *const MIB_TCPROW_OWNER_PID;
-            let row = &*row_ptr;
-
-            // Filter for LISTENING state (state = 2)
-            // MIB_TCP_STATE_LISTEN = 2
-            if row.dwState == 2 {
-                let port = ntohs((row.dwLocalPort & 0xFFFF) as u16);
-                let pid = row.dwOwningPid;
-                let process_path = get_process_path(pid);
-                let process_name = if process_path.is_empty() {
-                    format!("PID {}", pid)
-                } else {
-                    process_path
-                        .split('\\')
-                        .last()
-                        .unwrap_or("Unknown")
-                        .to_string()
-                };
-
-                ports.push(PortInfo {
-                    port,
-                    pid,
-                    process_name,
-                    process_path,
-                });
-            }
-        }
-
-        Ok(ports)
-    }
-}
-
-/// Get IPv6 listening ports
-fn get_ipv6_ports() -> Result<Vec<PortInfo>, String> {
-    unsafe {
-        let mut size: u32 = 0;
-
-        // First call to get required buffer size
-        let result = GetExtendedTcpTable(
-            None,
-            &mut size,
-            false,
-            windows::Win32::Networking::WinSock::AF_INET6.0 as u32,
-            TCP_TABLE_OWNER_PID_ALL,
-            0,
-        );
-
-        // ERROR_INSUFFICIENT_BUFFER = 122
-        // This error is expected on first call
-        if result != 122 {
-            // If no IPv6 ports, return empty vector instead of error
-            if result == 0 {
-                return Ok(Vec::new());
-            }
-            return Err(format!("Failed to get IPv6 buffer size: {}", result));
-        }
-
-        // Allocate buffer
-        let mut buffer = vec![0u8; size as usize];
-
-        // Second call to get actual data
-        let result = GetExtendedTcpTable(
-            Some(buffer.as_mut_ptr() as *mut _),
-            &mut size,
-            false,
-            windows::Win32::Networking::WinSock::AF_INET6.0 as u32,
-            TCP_TABLE_OWNER_PID_ALL,
-            0,
-        );
-
-        // Check if successful (ERROR_SUCCESS = 0)
-        if result != 0 {
-            return Err(format!("Failed to get IPv6 TCP table: {}", result));
-        }
-
-        // Cast buffer to TCP6 table structure
-        let table = &*(buffer.as_ptr() as *const MIB_TCP6TABLE_OWNER_PID);
-
-        let mut ports = Vec::new();
-
-        // Calculate offset to first entry
-        let table_ptr = buffer.as_ptr() as *const u8;
-        let row_size = mem::size_of::<MIB_TCP6ROW_OWNER_PID>();
-        let table_header_size = mem::size_of::<u32>(); // Size of dwNumEntries
-
-        // Iterate through all rows using pointer arithmetic
-        for i in 0..table.dwNumEntries {
-            // Calculate offset: header size + (i * row_size)
-            let row_offset = table_header_size + (i as usize * row_size);
-            let row_ptr = table_ptr.add(row_offset) as *const MIB_TCP6ROW_OWNER_PID;
-            let row = &*row_ptr;
-
-            // Filter for LISTENING state (state = 2)
-            // MIB_TCP_STATE_LISTEN = 2
-            if row.dwState == 2 {
-                let port = ntohs((row.dwLocalPort & 0xFFFF) as u16);
-                let pid = row.dwOwningPid;
-                let process_path = get_process_path(pid);
-                let process_name = if process_path.is_empty() {
-                    format!("PID {}", pid)
-                } else {
-                    process_path
-                        .split('\\')
-                        .last()
-                        .unwrap_or("Unknown")
-                        .to_string()
-                };
-
-                ports.push(PortInfo {
-                    port,
-                    pid,
-                    process_name,
-                    process_path,
-                });
-            }
-        }
-
-        Ok(ports)
-    }
-}
-
-/// List all TCP ports in LISTENING state (both IPv4 and IPv6)
+/// List all TCP ports in LISTENING state and all bound UDP ports (IPv4 and IPv6)
 #[tauri::command]
-fn list_listening_ports() -> Result<Vec<PortInfo>, String> {
-    // Get both IPv4 and IPv6 ports
-    let mut ipv4_ports = get_ipv4_ports().unwrap_or_default();
-    let mut ipv6_ports = get_ipv6_ports().unwrap_or_default();
-
-    // Combine both lists
-    let mut all_ports = Vec::new();
-    all_ports.append(&mut ipv4_ports);
-    all_ports.append(&mut ipv6_ports);
-
-    // Remove duplicates (same port and PID)
-    all_ports.sort_by_key(|p| (p.port, p.pid));
-    all_ports.dedup_by(|a, b| a.port == b.port && a.pid == b.pid);
-
-    // Sort by port number
-    all_ports.sort_by_key(|p| p.port);
-
-    Ok(all_ports)
+async fn list_listening_ports() -> Result<Vec<PortInfo>, String> {
+    // Run off the main thread so periodic polling never blocks the UI
+    tauri::async_runtime::spawn_blocking(collect_ports)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
-/// Kill a process by PID
+/// Kill a process by PID, optionally with all of its child processes.
+/// Returns the number of processes terminated.
 #[tauri::command]
-fn kill_process(pid: u32) -> Result<(), String> {
-    unsafe {
-        // Open process with terminate access
-        let handle = OpenProcess(PROCESS_TERMINATE, false, pid);
-
-        match handle {
-            Ok(handle) => {
-                // Terminate the process
-                let result = TerminateProcess(handle, 1); // Exit code 1
-                CloseHandle(handle).ok();
-
-                if result.is_err() {
-                    let error = result.unwrap_err();
-                    return Err(format!(
-                        "Failed to terminate process {}: {}",
-                        pid,
-                        error.code().0
-                    ));
-                }
-
-                Ok(())
-            }
-            Err(e) => {
-                let error_code = e.code().0;
-
-                // Common error codes
-                if error_code == 5 {
-                    // ERROR_ACCESS_DENIED
-                    Err(format!(
-                        "Access denied. Process {} may require Administrator privileges or may be a system process.",
-                        pid
-                    ))
-                } else if error_code == 87 {
-                    // ERROR_INVALID_PARAMETER
-                    Err(format!("Invalid PID: {}", pid))
-                } else {
-                    Err(format!(
-                        "Failed to open process {}: {} (Error code: {})",
-                        pid,
-                        e.to_string(),
-                        error_code
-                    ))
-                }
-            }
+async fn kill_process(pid: u32, tree: Option<bool>) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if tree.unwrap_or(false) {
+            process::terminate_process_tree(pid)
+        } else {
+            process::terminate_process(pid).map(|_| 1)
         }
-    }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn is_elevated() -> bool {
+    elevation::is_elevated()
+}
+
+/// Restart Open Port with Administrator privileges
+#[tauri::command]
+fn relaunch_as_admin(app: tauri::AppHandle) -> Result<(), String> {
+    elevation::relaunch_as_admin()?;
+    app.exit(0);
+    Ok(())
+}
+
+/// Ports to watch for changes, with localized notification texts
+#[tauri::command]
+fn set_watched_ports(
+    state: tauri::State<'_, watch::SharedWatchState>,
+    ports: Vec<u16>,
+    labels: watch::WatchLabels,
+) {
+    watch::set_watched(&state, ports, labels);
+}
+
+#[tauri::command]
+fn set_close_to_tray(state: tauri::State<'_, tray::CloseToTray>, enabled: bool) {
+    state.set(enabled);
+}
+
+#[tauri::command]
+fn set_tray_labels(app: tauri::AppHandle, show: String, quit: String) -> Result<(), String> {
+    tray::set_labels(&app, &show, &quit).map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    elevation::wait_for_previous_instance();
+
     tauri::Builder::default()
+        // Must be registered first: a second launch focuses the running window instead
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_main_window(app);
+        }))
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                // Visibility is not restored: a window hidden to the tray must come back visible
+                .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![list_listening_ports, kill_process])
+        .plugin(tauri_plugin_notification::init())
+        .manage(watch::SharedWatchState::default())
+        .manage(tray::CloseToTray::default())
+        .setup(|app| {
+            tray::create(app.handle())?;
+            watch::start(app.handle().clone());
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.state::<tray::CloseToTray>().enabled() {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            list_listening_ports,
+            kill_process,
+            is_elevated,
+            relaunch_as_admin,
+            set_watched_ports,
+            set_close_to_tray,
+            set_tray_labels
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collects_listening_ports() {
+        let ports = collect_ports().expect("port tables should be readable");
+        assert!(!ports.is_empty());
+        assert!(ports.iter().any(|p| p.protocol == "TCP"));
+        assert!(ports.iter().any(|p| p.protocol == "UDP"));
+        assert!(ports.iter().all(|p| !p.process_name.is_empty()));
+        assert!(ports.iter().all(|p| !p.local_addresses.is_empty()));
+        // System (PID 4) always binds something, e.g. 445/SMB
+        assert!(ports.iter().any(|p| p.is_system));
+    }
+
+    #[test]
+    fn merges_ipv4_and_ipv6_of_the_same_socket() {
+        let ports = collect_ports().unwrap();
+        let mut seen = std::collections::HashSet::new();
+        for p in &ports {
+            assert!(seen.insert((p.port, p.protocol, p.pid)), "duplicate row {:?}", p);
+        }
+    }
 }
