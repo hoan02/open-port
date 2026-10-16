@@ -18,18 +18,37 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Verify version matches tag
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(node -p "require('./package.json').version")
+          conf=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          crate=$(grep -m1 '^version' src-tauri/Cargo.toml | cut -d'"' -f2)
+          echo "tag=$tag package.json=$pkg tauri.conf.json=$conf Cargo.toml=$crate"
+          if [ "$pkg" != "$tag" ] || [ "$conf" != "$tag" ] || [ "$crate" != "$tag" ]; then
+            echo "::error::Version mismatch: bump package.json, tauri.conf.json and Cargo.toml to $tag before tagging"
+            exit 1
+          fi
+
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build Tauri
         run: npm run tauri:build
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             src-tauri/target/release/bundle/msi/*.msi
