@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -6,17 +7,55 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import type { PortInfo } from "@/types/ports";
-import { useTranslation } from "react-i18next";
-import { Copy, Info, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import {
+  formatEndpoint,
+  isLocallyReachable,
+  wellKnownPortName,
+  type PortInfo,
+} from "@/types/ports";
+import { useTranslation } from "react-i18next";
+import { Copy, ExternalLink, FolderOpen, Info, Trash2 } from "lucide-react";
+import { usePortActions } from "@/hooks/usePortActions";
 
 interface PortDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   port: PortInfo | null;
-  onKillClick?: (pid: number, processName: string) => void;
+  onKillClick: (port: PortInfo) => void;
+}
+
+function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`min-w-0 space-y-1 ${className ?? ""}`}>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const { copy } = usePortActions();
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-6 w-6 shrink-0 rounded-sm"
+      onClick={() => copy(value)}
+      title={label}
+      aria-label={label}
+    >
+      <Copy className="h-3.5 w-3.5" />
+    </Button>
+  );
 }
 
 export function PortDetailDialog({
@@ -26,13 +65,16 @@ export function PortDetailDialog({
   onKillClick,
 }: PortDetailDialogProps) {
   const { t } = useTranslation();
-  const localAddress = `0.0.0.0:${port?.port ?? ""}`;
+  const { openInBrowser, revealInExplorer } = usePortActions();
 
   if (!port) return null;
 
+  const wellKnown = wellKnownPortName(port.port);
+  const canOpenBrowser = port.protocol === "TCP" && isLocallyReachable(port);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md border-border">
+      <DialogContent className="max-w-lg border-border">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Info className="h-4 w-4" />
@@ -43,107 +85,138 @@ export function PortDetailDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">
-                {t("ports.table.port")}
-              </label>
-              <div>
+        <div className="space-y-4 py-2">
+          <div className="grid grid-cols-3 gap-4">
+            <Field label={t("ports.table.port")}>
+              <div className="flex items-center gap-1.5">
                 <Badge variant="outline" className="font-mono">
                   {port.port}
                 </Badge>
+                {wellKnown && (
+                  <span className="truncate text-xs text-muted-foreground">
+                    {wellKnown}
+                  </span>
+                )}
               </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">
-                {t("ports.table.pid")}
-              </label>
-              <div>
-                <code className="text-sm">{port.pid}</code>
+            </Field>
+            <Field label={t("ports.table.pid")}>
+              <code className="text-sm">{port.pid}</code>
+            </Field>
+            <Field label={t("ports.detail.protocol")}>
+              <div className="flex gap-1">
+                <Badge variant="secondary" className="text-xs">
+                  {port.protocol}
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {port.protocol === "TCP"
+                    ? "LISTENING"
+                    : t("ports.detail.bound")}
+                </Badge>
               </div>
-            </div>
+            </Field>
+          </div>
 
-            <div className="space-y-1 col-span-2">
-              <label className="text-xs font-medium text-muted-foreground">
-                {t("ports.table.processName")}
-              </label>
-              <div className="text-sm break-all">{port.process_name}</div>
-              {port.process_path && port.process_path !== port.process_name && (
-                <div className="text-xs text-muted-foreground break-all mt-1">
-                  {port.process_path}
-                </div>
+          <Field label={t("ports.table.processName")}>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="break-all">{port.process_name}</span>
+              {port.is_system && (
+                <Badge variant="secondary" className="text-[10px]">
+                  {t("ports.detail.systemProcess")}
+                </Badge>
               )}
             </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">
-                {t("ports.detail.protocol")}
-              </label>
-              <div>
-                <Badge variant="secondary" className="text-xs">
-                  TCP
-                </Badge>
+            {port.process_path && (
+              <div className="flex items-start gap-1">
+                <span className="flex-1 break-all text-xs text-muted-foreground">
+                  {port.process_path}
+                </span>
+                <CopyButton
+                  value={port.process_path}
+                  label={t("actions.copyPath")}
+                />
               </div>
-            </div>
+            )}
+          </Field>
 
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">
-                {t("ports.detail.state")}
-              </label>
-              <div>
-                <Badge variant="outline" className="text-xs">
-                  LISTENING
-                </Badge>
+          {port.services.length > 0 && (
+            <Field label={t("ports.detail.services")}>
+              <div className="flex flex-wrap gap-1">
+                {port.services.map((service) => (
+                  <Badge key={service} variant="outline" className="text-xs">
+                    {service}
+                  </Badge>
+                ))}
               </div>
-            </div>
-          </div>
+            </Field>
+          )}
 
-          <div className="pt-2 border-t border-border">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">
-                {t("ports.detail.localAddress")}
-              </label>
-              <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
-                <span>{localAddress}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 rounded-sm"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard?.writeText(localAddress);
-                      toast.success(t("ports.detail.copied"));
-                    } catch (err) {
-                      toast.error(t("ports.detail.copyAddress"));
-                    }
-                  }}
-                  title={t("ports.detail.copyAddress")}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
+          {port.command_line && (
+            <Field label={t("ports.detail.commandLine")}>
+              <div className="flex items-start gap-1">
+                <code className="max-h-24 flex-1 overflow-auto break-all rounded-sm bg-muted px-2 py-1 text-xs">
+                  {port.command_line}
+                </code>
+                <CopyButton
+                  value={port.command_line}
+                  label={t("actions.copyCommandLine")}
+                />
               </div>
+            </Field>
+          )}
+
+          <Field label={t("ports.detail.localAddress")}>
+            <div className="space-y-0.5">
+              {port.local_addresses.map((address) => {
+                const endpoint = formatEndpoint(address, port.port);
+                return (
+                  <div
+                    key={address}
+                    className="flex items-center gap-1 font-mono text-xs text-muted-foreground"
+                  >
+                    <span className="truncate">{endpoint}</span>
+                    <CopyButton
+                      value={endpoint}
+                      label={t("ports.detail.copyAddress")}
+                    />
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          </Field>
         </div>
 
-        <div className="flex justify-center pt-2 border-t border-border">
-          {onKillClick && (
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
+          {canOpenBrowser && (
             <Button
-              variant="destructive"
+              variant="outline"
               size="sm"
-              className="gap-2 px-4 min-w-32"
-              onClick={() => {
-                onKillClick(port.pid, port.process_name);
-                onOpenChange(false);
-              }}
-              title={t("ports.kill")}
+              onClick={() => openInBrowser(port)}
             >
-              <Trash2 className="h-4 w-4" />
-              <span>{t("ports.kill")}</span>
+              <ExternalLink className="h-4 w-4" />
+              {t("actions.openInBrowser")}
             </Button>
           )}
+          {port.process_path && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => revealInExplorer(port)}
+            >
+              <FolderOpen className="h-4 w-4" />
+              {t("actions.revealInExplorer")}
+            </Button>
+          )}
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              onOpenChange(false);
+              onKillClick(port);
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+            {t("ports.kill")}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

@@ -8,18 +8,13 @@
       "port": "Port",
       "processName": "Process name",
       "pid": "PID",
+      "address": "Address",
       "protocol": "Protocol",
       "action": "Action"
     },
     "noPorts": "No listening ports found.",
     "kill": "Kill now",
     "killing": "Killing...",
-    "stats": {
-      "showing": "Showing",
-      "of": "of",
-      "listeningPort": "listening port",
-      "listeningPorts": "listening ports"
-    },
     "detail": {
       "title": "Port details",
       "description": "Detailed information about the listening port",
@@ -29,14 +24,31 @@
       "localAddress": "Local address",
       "copyAddress": "Copy address",
       "copied": "Copied to clipboard",
-      "close": "Close"
-    }
+      "close": "Close",
+      "bound": "BOUND",
+      "systemProcess": "System / service",
+      "services": "Services",
+      "commandLine": "Command line"
+    },
+    "killSuccess": "Process {{name}} (PID {{pid}}) terminated",
+    "killFailed": "Could not kill process",
+    "loadFailed": "Could not load ports",
+    "new": "new",
+    "noMatches": "No ports match “{{query}}”.",
+    "noMatchesFilter": "No ports match the current filters.",
+    "showHiddenSystem": "Show {{count}} hidden system results",
+    "hiddenSystemNote": "{{count}} matching rows from system processes are hidden.",
+    "showAll": "Show all",
+    "killTreeSuccess": "{{count}} processes terminated (including child processes)"
   },
   "search": {
-    "placeholder": "Search by port, process name, or PID...",
+    "placeholder": "Search by port (:80 for exact), process, PID, address or TCP/UDP...",
+    "protocolAll": "All",
     "quickFilters": "Quick filters:",
     "clear": "Clear",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "hideSystem": "Hide system",
+    "hideSystemHint": "Hide services and OS processes (session 0). Databases installed as Windows services are hidden too."
   },
   "dialog": {
     "kill": {
@@ -45,17 +57,11 @@
       "warning": "This action cannot be undone. The process will be terminated immediately.",
       "cancel": "Cancel",
       "confirm": "Kill process",
-      "killing": "Killing..."
+      "killing": "Killing...",
+      "portsFreed": "This process holds {{count}} port(s), all will be freed:",
+      "tree": "Also kill child processes",
+      "treeHint": "Like taskkill /T. Useful for dev servers started by npm, yarn or a shell."
     }
-  },
-  "pagination": {
-    "showing": "Showing",
-    "to": "to",
-    "of": "of",
-    "ports": "ports",
-    "perPage": "per page",
-    "previous": "Previous",
-    "next": "Next"
   },
   "titleBar": {
     "minimize": "Minimize",
@@ -71,10 +77,88 @@
     "themeLight": "Light",
     "themeDark": "Dark",
     "themeSystem": "System",
-    "advanced": "Advanced",
-    "behavior": "Behavior",
-    "autoRefresh": "Auto refresh interval",
-    "sidebarMode": "Default sidebar mode",
-    "confirmKill": "Ask before killing process"
+    "statusBar": "Status bar",
+    "on": "On",
+    "off": "Off",
+    "closeToTray": "Close to tray"
+  },
+  "sidebar": {
+    "title": "Saved filters",
+    "allPorts": "All ports",
+    "add": "Save a filter",
+    "empty": "No saved filters yet. Use + to save the current search.",
+    "labelPlaceholder": "Label",
+    "queryPlaceholder": "Query (e.g. :3000)",
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
+    "moreActions": "More actions"
+  },
+  "statusBar": {
+    "ports": "Ports",
+    "filter": "Filter",
+    "clearFilter": "Clear filter",
+    "autoRefresh": "Auto refresh",
+    "refreshInterval": "Refresh interval",
+    "off": "Off",
+    "turnOn": "Turn on",
+    "turnOff": "Turn off",
+    "killing": "Killing PID {{pid}}…",
+    "paused": "Paused",
+    "pausedReason": {
+      "interacting": "Auto refresh pauses while the pointer is over the list, so rows do not move under the cursor",
+      "dialog": "Auto refresh pauses while a dialog is open",
+      "hidden": "Auto refresh pauses while the window is minimized"
+    },
+    "updatedJustNow": "Updated just now",
+    "updatedAgo": "Updated {{seconds}}s ago",
+    "elevated": "Admin",
+    "elevatedHint": "Running with Administrator privileges",
+    "notElevatedHint": "Some processes can only be killed with Administrator privileges"
+  },
+  "actions": {
+    "copied": "Copied to clipboard",
+    "copyFailed": "Could not copy to clipboard",
+    "openFailed": "Could not open",
+    "openInBrowser": "Open in browser",
+    "revealInExplorer": "Open containing folder",
+    "copy": "Copy",
+    "copyPort": "Port",
+    "copyPid": "PID",
+    "copyEndpoint": "Address:port",
+    "copyCommandLine": "Command line",
+    "copyPath": "Executable path",
+    "relaunchAsAdmin": "Run as Administrator",
+    "relaunchFailed": "Could not restart as Administrator"
+  },
+  "palette": {
+    "title": "Command palette",
+    "placeholder": "Type a command, a port or a process…",
+    "empty": "No results.",
+    "commands": "Commands",
+    "autoRefreshOn": "Turn auto refresh on",
+    "autoRefreshOff": "Turn auto refresh off",
+    "showSystem": "Show system processes",
+    "hideSystem": "Hide system processes",
+    "kill": "Kill process",
+    "open": "Open in browser",
+    "details": "View details"
+  },
+  "watch": {
+    "title": "Watched ports",
+    "watching": "Watched",
+    "watch": "Watch port {{port}}",
+    "unwatch": "Stop watching port {{port}}",
+    "inUseBy": "In use by {{process}}",
+    "free": "free",
+    "addPlaceholder": "Add port, e.g. 3000",
+    "empty": "Get a notification when a port is taken or freed.",
+    "notifyInUse": "Port {port} is now used by {process}",
+    "notifyFreed": "Port {port} is now free"
+  },
+  "tray": {
+    "show": "Open Open Port",
+    "quit": "Quit"
   }
 }

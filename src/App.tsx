@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 import { TitleBar } from "@/components/layout/TitleBar";
@@ -7,8 +7,14 @@ import {
   type PortMetrics,
 } from "@/components/features/ports/PortList";
 import { KillDialog } from "@/components/features/ports/KillDialog";
+import { PortDetailDialog } from "@/components/features/ports/PortDetailDialog";
+import { CommandPalette } from "@/components/features/ports/CommandPalette";
+import { SEARCH_INPUT_ID } from "@/components/features/ports/SearchBar";
+import { isElevated, relaunchAsAdmin } from "@/api/ports";
+import { processLabel, type PortInfo } from "@/types/ports";
 import { usePorts } from "@/hooks/usePorts";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
+import { useDesktopIntegration } from "@/hooks/useDesktopIntegration";
 import type { ImperativePanelGroupHandle } from "react-resizable-panels";
 import {
   ResizableHandle,
@@ -19,22 +25,44 @@ import {
   Sidebar,
   SidebarRail,
   type FavoritePreset,
-  type SidebarMode,
 } from "@/components/layout/Sidebar";
-import { StatusBar } from "@/components/layout/StatusBar";
+import { StatusBar, type PauseReason } from "@/components/layout/StatusBar";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 
 function App() {
-  const { ports, loading, error, killingPid, loadPorts, killProcess } =
-    usePorts();
+  const { t } = useTranslation();
+  const {
+    ports,
+    loading,
+    error,
+    killingPid,
+    lastUpdated,
+    newKeys,
+    loadPorts,
+    killProcess,
+  } = usePorts();
+  const { watchedPorts, toggleWatch, closeToTray, setCloseToTray } =
+    useDesktopIntegration();
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [confirmKill, setConfirmKill] = useState<{
-    pid: number;
-    name: string;
-  } | null>(null);
+  const [confirmKill, setConfirmKill] = useState<PortInfo | null>(null);
+  const [detailPort, setDetailPort] = useState<PortInfo | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [interacting, setInteracting] = useState(false);
+  const [windowHidden, setWindowHidden] = useState(
+    () => document.visibilityState === "hidden"
+  );
+  const [elevated, setElevated] = useState(false);
+  const [hideSystem, setHideSystem] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("hide-system") !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("favorites");
   const [lastExpandedLayout, setLastExpandedLayout] = useState<number[]>([
     24, 76,
   ]);
@@ -160,11 +188,13 @@ function App() {
     persistLayout(collapsedLayout, true);
   };
 
+  // ":port" matches the port exactly instead of every port/PID containing the digits
   const defaultFavorites: FavoritePreset[] = [
-    { label: "Frontend (3000)", query: "3000" },
-    { label: "API (8080)", query: "8080" },
-    { label: "Database (5432)", query: "5432" },
+    { label: "Frontend (3000)", query: ":3000" },
+    { label: "API (8080)", query: ":8080" },
+    { label: "Database (5432)", query: ":5432" },
   ];
+  const legacyDefaultQueries = new Set(["3000", "8080", "5432"]);
 
   const [favoritePresets, setFavoritePresets] = useState<FavoritePreset[]>(
     () => {
@@ -173,10 +203,18 @@ function App() {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.filter(
-            (item): item is FavoritePreset =>
-              typeof item?.label === "string" && typeof item?.query === "string"
-          );
+          return parsed
+            .filter(
+              (item): item is FavoritePreset =>
+                typeof item?.label === "string" &&
+                typeof item?.query === "string"
+            )
+            .map((item) =>
+              // Migrate the old substring-matching default presets
+              legacyDefaultQueries.has(item.query)
+                ? { ...item, query: `:${item.query}` }
+                : item
+            );
         }
         return defaultFavorites;
       } catch {
@@ -213,25 +251,121 @@ function App() {
     setFavoritePresets((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Auto-refresh (respect toggle)
-  useAutoRefresh(loadPorts, autoRefreshInterval, autoRefreshEnabled);
+  const handleHideSystemChange = useCallback((hide: boolean) => {
+    setHideSystem(hide);
+    try {
+      localStorage.setItem("hide-system", String(hide));
+    } catch {
+      // storage unavailable
+    }
+  }, []);
 
-  const handleKillClick = (pid: number, processName: string) => {
-    setConfirmKill({ pid, name: processName });
-  };
+  useEffect(() => {
+    isElevated().then(setElevated);
+  }, []);
+
+  useEffect(() => {
+    const onVisibility = () =>
+      setWindowHidden(document.visibilityState === "hidden");
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  // Pause while the user is aiming at a row, so rows never shift under the cursor
+  // (e.g. right before clicking kill), while a dialog is open, and while minimized
+  const pauseReason: PauseReason | null = windowHidden
+    ? "hidden"
+    : confirmKill || detailPort || paletteOpen
+      ? "dialog"
+      : interacting
+        ? "interacting"
+        : null;
+
+  useAutoRefresh(
+    loadPorts,
+    autoRefreshInterval,
+    autoRefreshEnabled,
+    pauseReason !== null
+  );
+
+  const handleRelaunchAsAdmin = useCallback(async () => {
+    try {
+      await relaunchAsAdmin();
+    } catch (err) {
+      toast.error(t("actions.relaunchFailed"), {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }, [t]);
+
+  const handleKillClick = useCallback((port: PortInfo) => {
+    setConfirmKill(port);
+  }, []);
+
+  const handleOpenDetail = useCallback((port: PortInfo) => {
+    setDetailPort(port);
+  }, []);
 
   const handleClearFilter = () => setSearchTerm("");
 
-  const handleKillConfirm = async () => {
+  const handleKillConfirm = async (tree: boolean) => {
     if (!confirmKill) return;
 
+    const { pid } = confirmKill;
+    const name = processLabel(confirmKill);
     try {
-      await killProcess(confirmKill.pid);
+      const killed = await killProcess(pid, tree);
       setConfirmKill(null);
+      toast.success(t("ports.killSuccess", { name, pid }), {
+        description:
+          killed > 1 ? t("ports.killTreeSuccess", { count: killed }) : undefined,
+      });
     } catch (err) {
-      // Error is already handled in usePorts hook
+      const message = err instanceof Error ? err.message : String(err);
+      const accessDenied = /access denied/i.test(message);
+      toast.error(t("ports.killFailed"), {
+        description: message,
+        action:
+          accessDenied && !elevated
+            ? {
+                label: t("actions.relaunchAsAdmin"),
+                onClick: handleRelaunchAsAdmin,
+              }
+            : undefined,
+      });
     }
   };
+
+  // Global shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      } else if (ctrl && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        const input = document.getElementById(SEARCH_INPUT_ID);
+        if (input instanceof HTMLInputElement) {
+          input.focus();
+          input.select();
+        }
+      } else if (e.key === "F5" || (ctrl && e.key.toLowerCase() === "r")) {
+        // Refresh the list instead of reloading the whole webview
+        e.preventDefault();
+        loadPorts();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [loadPorts]);
+
+  // Every port of the process about to be killed, from the latest data
+  const killPorts = useMemo(
+    () => (confirmKill ? ports.filter((p) => p.pid === confirmKill.pid) : []),
+    [ports, confirmKill]
+  );
 
   return (
     <div className="h-screen bg-background overflow-hidden">
@@ -241,12 +375,14 @@ function App() {
       />
       <div className={cn("flex h-full pt-9", statusBarVisible ? "pb-7" : "")}>
         <SidebarRail
-          mode={sidebarMode}
-          onModeChange={setSidebarMode}
+          sidebarOpen={!sidebarCollapsed}
+          onToggleSidebar={toggleCollapse}
           statusBarVisible={statusBarVisible}
           onToggleStatusBar={persistStatusBar}
+          closeToTray={closeToTray}
+          onCloseToTrayChange={setCloseToTray}
         />
-        <div className="flex h-full flex-1 flex-col">
+        <div className="flex h-full min-w-0 flex-1 flex-col">
           <ResizablePanelGroup
             ref={panelGroupRef}
             direction="horizontal"
@@ -264,52 +400,81 @@ function App() {
                 collapsed={sidebarCollapsed}
                 favorites={favoritePresets}
                 onSelectQuery={setSearchTerm}
-                onRefresh={loadPorts}
                 searchTerm={searchTerm}
-                mode={sidebarMode}
                 onAddFavorite={handleAddFavorite}
                 onUpdateFavorite={handleUpdateFavorite}
                 onDeleteFavorite={handleDeleteFavorite}
+                ports={ports}
+                watchedPorts={watchedPorts}
+                onToggleWatch={toggleWatch}
               />
             </ResizablePanel>
             {!sidebarCollapsed && <ResizableHandle withHandle />}
             <ResizablePanel minSize={45}>
-              <div className="h-full overflow-auto p-4 md:p-8">
-                <div className="max-w-7xl mx-auto space-y-6">
-                  {error && (
-                    <Alert variant="destructive">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                  )}
+              <div className="mx-auto flex h-full max-w-7xl flex-col gap-4 p-4 md:px-6">
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
 
-                  <PortList
-                    ports={ports}
-                    loading={loading}
-                    killingPid={killingPid}
-                    searchTerm={searchTerm}
-                    onSearchChange={setSearchTerm}
-                    onRefresh={loadPorts}
-                    onKillClick={handleKillClick}
-                    onMetricsChange={setMetrics}
-                  />
-
-                  {confirmKill && (
-                    <KillDialog
-                      open={!!confirmKill}
-                      onOpenChange={(open) => !open && setConfirmKill(null)}
-                      processName={confirmKill.name}
-                      pid={confirmKill.pid}
-                      onConfirm={handleKillConfirm}
-                      killing={killingPid === confirmKill.pid}
-                    />
-                  )}
-                </div>
+                <PortList
+                  ports={ports}
+                  loading={loading}
+                  killingPid={killingPid}
+                  newKeys={newKeys}
+                  searchTerm={searchTerm}
+                  onSearchChange={setSearchTerm}
+                  onRefresh={loadPorts}
+                  onOpenDetail={handleOpenDetail}
+                  onKillClick={handleKillClick}
+                  onMetricsChange={setMetrics}
+                  onInteractionChange={setInteracting}
+                  hideSystem={hideSystem}
+                  onHideSystemChange={handleHideSystemChange}
+                  watchedPorts={watchedPorts}
+                  onToggleWatch={toggleWatch}
+                />
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
       </div>
+
+      {confirmKill && (
+        <KillDialog
+          open={!!confirmKill}
+          onOpenChange={(open) => !open && setConfirmKill(null)}
+          port={confirmKill}
+          processPorts={killPorts.length > 0 ? killPorts : [confirmKill]}
+          onConfirm={handleKillConfirm}
+          killing={killingPid === confirmKill.pid}
+        />
+      )}
+
+      <PortDetailDialog
+        open={!!detailPort}
+        onOpenChange={(open) => !open && setDetailPort(null)}
+        port={detailPort}
+        onKillClick={handleKillClick}
+      />
+
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        ports={ports}
+        onRefresh={loadPorts}
+        autoRefreshEnabled={autoRefreshEnabled}
+        onToggleAutoRefresh={toggleAutoRefresh}
+        hideSystem={hideSystem}
+        onToggleHideSystem={() => handleHideSystemChange(!hideSystem)}
+        elevated={elevated}
+        onRelaunchAsAdmin={handleRelaunchAsAdmin}
+        onKill={handleKillClick}
+        onOpenDetail={handleOpenDetail}
+      />
+
       {statusBarVisible && (
         <StatusBar
           metrics={metrics}
@@ -318,9 +483,12 @@ function App() {
           autoRefreshEnabled={autoRefreshEnabled}
           onToggleAutoRefresh={toggleAutoRefresh}
           onChangeAutoRefreshInterval={updateAutoRefreshInterval}
-          onRefresh={loadPorts}
-          sidebarMode={sidebarMode}
           onClearFilter={handleClearFilter}
+          lastUpdated={lastUpdated}
+          pauseReason={pauseReason}
+          elevated={elevated}
+          onRelaunchAsAdmin={handleRelaunchAsAdmin}
+          onOpenPalette={() => setPaletteOpen(true)}
         />
       )}
     </div>

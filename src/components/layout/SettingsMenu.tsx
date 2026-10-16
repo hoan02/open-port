@@ -1,4 +1,12 @@
-import { Settings, Moon, Sun, Monitor, Eye, EyeOff } from "lucide-react";
+import {
+  Settings,
+  Moon,
+  Sun,
+  Monitor,
+  Eye,
+  EyeOff,
+  PanelBottomClose,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -7,9 +15,6 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useLanguage } from "@/hooks/useLanguage";
 import { useTheme } from "@/hooks/useTheme";
@@ -19,11 +24,15 @@ import { cn } from "@/lib/utils";
 type SettingsMenuProps = {
   statusBarVisible: boolean;
   onToggleStatusBar: (next: boolean) => void;
+  closeToTray: boolean;
+  onCloseToTrayChange: (next: boolean) => void;
 };
 
 export function SettingsMenu({
   statusBarVisible,
   onToggleStatusBar,
+  closeToTray,
+  onCloseToTrayChange,
 }: SettingsMenuProps) {
   const { t } = useTranslation();
   const { currentLanguage, changeLanguage } = useLanguage();
@@ -118,41 +127,30 @@ export function SettingsMenu({
 
         <DropdownMenuSeparator />
 
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger className="h-7 py-1 text-xs">
-            <span>{t("settings.advanced") ?? "Advanced"}</span>
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-60 ml-1">
-            <DropdownMenuLabel className="text-xs">
-              {t("settings.behavior") ?? "Behavior"}
-            </DropdownMenuLabel>
-            <DropdownMenuItem className="h-7 py-1 text-xs">
-              {t("settings.autoRefresh") ?? "Auto refresh interval"}
-            </DropdownMenuItem>
-            <DropdownMenuItem className="h-7 py-1 text-xs">
-              {t("settings.sidebarMode") ?? "Default sidebar mode"}
-            </DropdownMenuItem>
-            <DropdownMenuItem className="h-7 py-1 text-xs">
-              {t("settings.confirmKill") ?? "Ask before killing process"}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="h-7 py-1 text-xs"
-              onSelect={() => onToggleStatusBar(!statusBarVisible)}
-            >
-              <div className="flex items-center gap-2">
-                {statusBarVisible ? (
-                  <Eye className="h-4 w-4" />
-                ) : (
-                  <EyeOff className="h-4 w-4" />
-                )}
-                <span>Status bar</span>
-              </div>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {statusBarVisible ? "On" : "Off"}
-              </span>
-            </DropdownMenuItem>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+        <DropdownMenuItem
+          className="flex h-7 items-center gap-2 py-1 text-xs"
+          onSelect={() => onToggleStatusBar(!statusBarVisible)}
+        >
+          {statusBarVisible ? (
+            <Eye className="h-4 w-4" />
+          ) : (
+            <EyeOff className="h-4 w-4" />
+          )}
+          <span>{t("settings.statusBar")}</span>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {statusBarVisible ? t("settings.on") : t("settings.off")}
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="flex h-7 items-center gap-2 py-1 text-xs"
+          onSelect={() => onCloseToTrayChange(!closeToTray)}
+        >
+          <PanelBottomClose className="h-4 w-4" />
+          <span>{t("settings.closeToTray")}</span>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {closeToTray ? t("settings.on") : t("settings.off")}
+          </span>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -1,20 +1,27 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
+/**
+ * Call `callback` every `interval` ms while enabled and not paused.
+ * Runs once immediately on mount and whenever refreshing resumes.
+ */
 export function useAutoRefresh(
   callback: () => void,
   interval: number = 2000,
-  enabled: boolean = true
+  enabled: boolean = true,
+  paused: boolean = false
 ) {
+  const hasRun = useRef(false);
+
   useEffect(() => {
-    // Always run once on mount to populate data
-    callback();
+    // Always populate data once, even when auto refresh is off
+    if (!hasRun.current || (enabled && !paused)) {
+      hasRun.current = true;
+      callback();
+    }
 
-    if (!enabled) return;
+    if (!enabled || paused) return;
 
-    // Set up interval
     const id = setInterval(callback, interval);
-
-    // Cleanup
     return () => clearInterval(id);
-  }, [callback, interval, enabled]);
+  }, [callback, interval, enabled, paused]);
 }

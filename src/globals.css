@@ -189,3 +189,17 @@ a,
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
+
+/* Highlight for ports that just started listening */
+@keyframes new-port {
+  from {
+    background-color: color-mix(in oklab, var(--primary) 28%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.animate-new-port {
+  animation: new-port 4s ease-out;
+}

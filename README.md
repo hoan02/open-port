@@ -11,10 +11,14 @@
 
 ## Chức năng chính
 
-- Danh sách thời gian thực các cổng mở kèm tiến trình, PID và giao thức.
-- Tìm kiếm theo cổng, tên tiến trình hoặc PID; bộ lọc nhanh cho stack phổ biến.
-- Lưu mục yêu thích để truy cập nhanh (ví dụ Frontend 3000, API 8080).
-- Tự động làm mới và hành động từng dòng để xem hoặc đóng kết nối.
+- Danh sách thời gian thực các cổng TCP đang lắng nghe và cổng UDP đang bind (IPv4 + IPv6 gộp một dòng), kèm tiến trình, PID, địa chỉ bind và tên cổng phổ biến.
+- Hiện dòng lệnh của tiến trình (phân biệt nhiều `node.exe`) và tên dịch vụ bên trong `svchost.exe`.
+- Ẩn tiến trình hệ thống/dịch vụ chỉ với một nút; lọc nhanh TCP/UDP và theo tiến trình đang chạy.
+- Tìm kiếm theo cổng (`:3000` để khớp chính xác), tiến trình, dòng lệnh, PID hoặc địa chỉ; lưu bộ lọc hay dùng.
+- Kết thúc tiến trình (tuỳ chọn cả tiến trình con), mở `localhost:<port>` trong trình duyệt, mở thư mục chứa file chạy, sao chép thông tin qua menu chuột phải.
+- Theo dõi cổng: thông báo Windows khi cổng bị chiếm hoặc được giải phóng, kể cả khi app đang ở khay hệ thống.
+- Phím tắt: `Ctrl+K` bảng lệnh, `Ctrl+F` tìm kiếm, `F5` làm mới, `↑/↓` chọn dòng, `Enter` xem chi tiết, `Delete` kết thúc tiến trình.
+- Tự làm mới (tạm dừng khi đang trỏ chuột vào danh sách để các dòng không xê dịch), đánh dấu cổng vừa mở, nút chạy lại với quyền Administrator.
 
 ## Yêu cầu
 

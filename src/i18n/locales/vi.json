@@ -8,18 +8,13 @@
       "port": "Cổng",
       "processName": "Tên tiến trình",
       "pid": "PID",
+      "address": "Địa chỉ",
       "protocol": "Giao thức",
       "action": "Thao tác"
     },
     "noPorts": "Không tìm thấy cổng nào đang lắng nghe.",
     "kill": "Kết thúc ngay",
     "killing": "Đang kết thúc...",
-    "stats": {
-      "showing": "Hiển thị",
-      "of": "trong tổng số",
-      "listeningPort": "cổng đang lắng nghe",
-      "listeningPorts": "cổng đang lắng nghe"
-    },
     "detail": {
       "title": "Chi tiết cổng",
       "description": "Thông tin chi tiết về cổng đang lắng nghe",
@@ -29,14 +24,31 @@
       "localAddress": "Địa chỉ cục bộ",
       "copyAddress": "Sao chép địa chỉ",
       "copied": "Đã sao chép",
-      "close": "Đóng"
-    }
+      "close": "Đóng",
+      "bound": "ĐÃ BIND",
+      "systemProcess": "Hệ thống / dịch vụ",
+      "services": "Dịch vụ",
+      "commandLine": "Dòng lệnh"
+    },
+    "killSuccess": "Đã kết thúc tiến trình {{name}} (PID {{pid}})",
+    "killFailed": "Không thể kết thúc tiến trình",
+    "loadFailed": "Không thể tải danh sách cổng",
+    "new": "mới",
+    "noMatches": "Không có cổng nào khớp “{{query}}”.",
+    "noMatchesFilter": "Không có cổng nào khớp bộ lọc hiện tại.",
+    "showHiddenSystem": "Hiện {{count}} kết quả hệ thống đang ẩn",
+    "hiddenSystemNote": "{{count}} dòng khớp thuộc tiến trình hệ thống đang bị ẩn.",
+    "showAll": "Hiện tất cả",
+    "killTreeSuccess": "Đã kết thúc {{count}} tiến trình (gồm cả tiến trình con)"
   },
   "search": {
-    "placeholder": "Tìm kiếm theo cổng, tên tiến trình hoặc PID...",
+    "placeholder": "Tìm theo cổng (:80 để khớp chính xác), tiến trình, PID, địa chỉ hoặc TCP/UDP...",
+    "protocolAll": "Tất cả",
     "quickFilters": "Bộ lọc nhanh:",
     "clear": "Xóa",
-    "refresh": "Làm mới"
+    "refresh": "Làm mới",
+    "hideSystem": "Ẩn hệ thống",
+    "hideSystemHint": "Ẩn dịch vụ và tiến trình của hệ điều hành (session 0). Database cài dạng Windows service cũng sẽ bị ẩn."
   },
   "dialog": {
     "kill": {
@@ -45,17 +57,11 @@
       "warning": "Hành động này không thể hoàn tác. Tiến trình sẽ bị kết thúc ngay lập tức.",
       "cancel": "Hủy",
       "confirm": "Kết thúc tiến trình",
-      "killing": "Đang kết thúc..."
+      "killing": "Đang kết thúc...",
+      "portsFreed": "Tiến trình này đang giữ {{count}} cổng, tất cả sẽ được giải phóng:",
+      "tree": "Kết thúc cả tiến trình con",
+      "treeHint": "Giống taskkill /T. Hữu ích với dev server chạy qua npm, yarn hoặc shell."
     }
-  },
-  "pagination": {
-    "showing": "Hiển thị",
-    "to": "đến",
-    "of": "trong tổng số",
-    "ports": "cổng",
-    "perPage": "mỗi trang",
-    "previous": "Trước",
-    "next": "Sau"
   },
   "titleBar": {
     "minimize": "Thu nhỏ",
@@ -71,10 +77,88 @@
     "themeLight": "Sáng",
     "themeDark": "Tối",
     "themeSystem": "Hệ thống",
-    "advanced": "Nâng cao",
-    "behavior": "Hành vi",
-    "autoRefresh": "Chu kỳ tự làm mới",
-    "sidebarMode": "Chế độ thanh bên mặc định",
-    "confirmKill": "Hỏi trước khi kết thúc tiến trình"
+    "statusBar": "Thanh trạng thái",
+    "on": "Bật",
+    "off": "Tắt",
+    "closeToTray": "Đóng xuống khay hệ thống"
+  },
+  "sidebar": {
+    "title": "Bộ lọc đã lưu",
+    "allPorts": "Tất cả cổng",
+    "add": "Lưu bộ lọc",
+    "empty": "Chưa có bộ lọc nào. Bấm + để lưu nội dung tìm kiếm hiện tại.",
+    "labelPlaceholder": "Tên",
+    "queryPlaceholder": "Truy vấn (vd: :3000)",
+    "save": "Lưu",
+    "cancel": "Huỷ",
+    "edit": "Sửa",
+    "delete": "Xoá",
+    "moreActions": "Thao tác khác"
+  },
+  "statusBar": {
+    "ports": "Cổng",
+    "filter": "Bộ lọc",
+    "clearFilter": "Xoá bộ lọc",
+    "autoRefresh": "Tự làm mới",
+    "refreshInterval": "Chu kỳ làm mới",
+    "off": "Tắt",
+    "turnOn": "Bật",
+    "turnOff": "Tắt",
+    "killing": "Đang kết thúc PID {{pid}}…",
+    "paused": "Tạm dừng",
+    "pausedReason": {
+      "interacting": "Tự làm mới tạm dừng khi chuột ở trên danh sách để các dòng không bị xê dịch",
+      "dialog": "Tự làm mới tạm dừng khi đang mở hộp thoại",
+      "hidden": "Tự làm mới tạm dừng khi cửa sổ bị thu nhỏ"
+    },
+    "updatedJustNow": "Vừa cập nhật",
+    "updatedAgo": "Cập nhật {{seconds}}s trước",
+    "elevated": "Admin",
+    "elevatedHint": "Đang chạy với quyền Administrator",
+    "notElevatedHint": "Một số tiến trình chỉ kết thúc được khi có quyền Administrator"
+  },
+  "actions": {
+    "copied": "Đã sao chép",
+    "copyFailed": "Không thể sao chép",
+    "openFailed": "Không thể mở",
+    "openInBrowser": "Mở trong trình duyệt",
+    "revealInExplorer": "Mở thư mục chứa",
+    "copy": "Sao chép",
+    "copyPort": "Cổng",
+    "copyPid": "PID",
+    "copyEndpoint": "Địa chỉ:cổng",
+    "copyCommandLine": "Dòng lệnh",
+    "copyPath": "Đường dẫn file chạy",
+    "relaunchAsAdmin": "Chạy với quyền Admin",
+    "relaunchFailed": "Không thể khởi động lại với quyền Admin"
+  },
+  "palette": {
+    "title": "Bảng lệnh",
+    "placeholder": "Gõ lệnh, số cổng hoặc tên tiến trình…",
+    "empty": "Không có kết quả.",
+    "commands": "Lệnh",
+    "autoRefreshOn": "Bật tự làm mới",
+    "autoRefreshOff": "Tắt tự làm mới",
+    "showSystem": "Hiện tiến trình hệ thống",
+    "hideSystem": "Ẩn tiến trình hệ thống",
+    "kill": "Kết thúc tiến trình",
+    "open": "Mở trong trình duyệt",
+    "details": "Xem chi tiết"
+  },
+  "watch": {
+    "title": "Đang theo dõi",
+    "watching": "Đang theo dõi",
+    "watch": "Theo dõi cổng {{port}}",
+    "unwatch": "Bỏ theo dõi cổng {{port}}",
+    "inUseBy": "Đang được {{process}} dùng",
+    "free": "trống",
+    "addPlaceholder": "Thêm cổng, vd: 3000",
+    "empty": "Nhận thông báo khi một cổng bị chiếm hoặc được giải phóng.",
+    "notifyInUse": "Cổng {port} đang được {process} sử dụng",
+    "notifyFreed": "Cổng {port} đã được giải phóng"
+  },
+  "tray": {
+    "show": "Mở Open Port",
+    "quit": "Thoát"
   }
 }
