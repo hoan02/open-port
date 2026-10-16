@@ -35,3 +35,23 @@ git push origin vX.Y.Z
 6. Kiểm tra kết quả
 
 - Truy cập https://github.com/hoan02/open-port/releases để xác nhận assets đã được đính kèm.
+
+## Ký bản cập nhật (auto-update)
+
+Mỗi bản release được ký và kèm `latest.json`, để updater trong app dùng được ngay khi bật.
+
+> **Trạng thái:** app chưa có plugin `tauri-plugin-updater`. Mọi bản của plugin đều phụ thuộc crate `zip` 4.x, mà crates.io đã yank gần như toàn bộ phiên bản `zip` (10/2026). Khi Tauri phát hành bản dùng `zip` hợp lệ, chỉ cần thêm `tauri-plugin-updater` + `tauri-plugin-process` và nút "Kiểm tra cập nhật"; cấu hình `plugins.updater` trong `tauri.conf.json` đã có sẵn.
+
+Workflow cần 2 secret trong *Settings → Secrets and variables → Actions*:
+
+| Secret | Giá trị |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | Nội dung file `~/.tauri/open-port.key` |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Nội dung file `~/.tauri/open-port.key.password` |
+
+Public key tương ứng nằm trong `src-tauri/tauri.conf.json` (`plugins.updater.pubkey`).
+
+- **Không commit private key.** Hãy sao lưu 2 file trên ở nơi an toàn: nếu mất khoá, các bản đã cài sẽ không nhận được cập nhật nữa.
+- Nếu tạo khoá mới, phải thay `pubkey` và phát hành lại; người dùng bản cũ sẽ phải cài thủ công một lần.
+- Muốn build có ký trên máy cục bộ, đặt 2 biến môi trường cùng tên trước khi chạy `npm run tauri:build`.
+
