@@ -379,7 +379,9 @@ export function PortList({
 
       {filteredPorts.length > 0 && hiddenSystemMatches > 0 && (
         <p className="px-1 text-xs text-muted-foreground">
-          {t("ports.hiddenSystemNote", { count: hiddenSystemMatches })}{" "}
+          {t(search ? "ports.hiddenSystemNote" : "ports.hiddenSystemNoteAll", {
+            count: hiddenSystemMatches,
+          })}{" "}
           <button
             type="button"
             className="font-medium text-foreground underline-offset-2 hover:underline"

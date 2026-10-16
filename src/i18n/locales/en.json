@@ -39,7 +39,8 @@
     "showHiddenSystem": "Show {{count}} hidden system results",
     "hiddenSystemNote": "{{count}} matching rows from system processes are hidden.",
     "showAll": "Show all",
-    "killTreeSuccess": "{{count}} processes terminated (including child processes)"
+    "killTreeSuccess": "{{count}} processes terminated (including child processes)",
+    "hiddenSystemNoteAll": "{{count}} rows from system processes are hidden."
   },
   "search": {
     "placeholder": "Search by port (:80 for exact), process, PID, address or TCP/UDP...",

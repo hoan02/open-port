@@ -289,7 +289,10 @@ export function PortTable({
                   <TableCell
                     className={cn(
                       "sticky right-0 px-3 py-2 text-center",
-                      selected ? "bg-[color-mix(in_oklab,var(--primary)_10%,var(--background))]" : "bg-background"
+                      selected
+                        ? "bg-[color-mix(in_oklab,var(--primary)_10%,var(--background))] group-hover:bg-[color-mix(in_oklab,var(--primary)_15%,var(--background))]"
+                        : "bg-background group-hover:bg-[color-mix(in_oklab,var(--muted)_30%,var(--background))]",
+                      isNew && "animate-new-port-cell"
                     )}
                   >
                     <div className="flex items-center justify-center gap-1">

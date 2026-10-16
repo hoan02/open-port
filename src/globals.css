@@ -203,3 +203,17 @@ a,
 .animate-new-port {
   animation: new-port 4s ease-out;
 }
+
+/* Same highlight for the pinned action cell, which has an opaque background */
+@keyframes new-port-cell {
+  from {
+    background-color: color-mix(in oklab, var(--primary) 28%, var(--background));
+  }
+  to {
+    background-color: var(--background);
+  }
+}
+
+.animate-new-port-cell {
+  animation: new-port-cell 4s ease-out;
+}

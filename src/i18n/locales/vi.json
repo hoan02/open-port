@@ -39,7 +39,8 @@
     "showHiddenSystem": "Hiện {{count}} kết quả hệ thống đang ẩn",
     "hiddenSystemNote": "{{count}} dòng khớp thuộc tiến trình hệ thống đang bị ẩn.",
     "showAll": "Hiện tất cả",
-    "killTreeSuccess": "Đã kết thúc {{count}} tiến trình (gồm cả tiến trình con)"
+    "killTreeSuccess": "Đã kết thúc {{count}} tiến trình (gồm cả tiến trình con)",
+    "hiddenSystemNoteAll": "{{count}} dòng của tiến trình hệ thống đang bị ẩn."
   },
   "search": {
     "placeholder": "Tìm theo cổng (:80 để khớp chính xác), tiến trình, PID, địa chỉ hoặc TCP/UDP...",
